@@ -50,6 +50,7 @@
         return null;
       }
     }
+    silk.sleeve.given = !!(silk.sleeve.c || silk.sleeve.p);
     if (!silk.sleeve.c) silk.sleeve.c = silk.body.c;
     return silk;
   }
@@ -62,72 +63,82 @@
   const COLLAR = 'M78 14 Q100 24 122 14 L128 23 Q100 37 72 23 Z';
   const OUTLINE = '#2A2A2E';
 
-  // 帯状の輪（縦位置の中心）
-  const RING_Y = { '一本輪': [108], '二本輪': [94, 122], '三本輪': [82, 108, 134] };
-  const BAND_H = 14;
+  // 帯状の輪（縦位置の中心）。お手本に合わせて太めにする
+  const RING_Y = { '一本輪': [110], '二本輪': [92, 128], '三本輪': [78, 110, 142] };
+  const BAND_H = { '一本輪': 22, '二本輪': 20, '三本輪': 18 };
+  const BAND_H1 = 22; // 一文字
+
+  // 袖について何も書かれていないとき、袖にも続く柄
+  const SLEEVE_INHERIT = new Set(['一本輪', '二本輪', '三本輪', '山形一本輪', '山形二本輪', '山形三本輪', '菱山形', '縦縞', '格子', '元禄', 'ダイヤモンド', 'うろこ']);
 
   function zigzag(yc, x0, x1, period, amp) {
     const pts = [];
     for (let x = x0, up = true; x <= x1 + period; x += period / 2, up = !up) pts.push(`${x},${yc + (up ? -amp : amp)}`);
     return pts.join(' ');
   }
+  const diamond = (x, y, w, h, f) => `<polygon points="${x},${y - h / 2} ${x + w / 2},${y} ${x},${y + h / 2} ${x - w / 2},${y}" ${f}/>`;
 
-  // 柄を描く（クリップ領域の中に、色 col で描画）
+  // 柄を描く（クリップ領域の中に、色 col で描画）。area: body / sleeve
   function patternShapes(t, col, area) {
     const f = `fill="${col}"`;
-    const x0 = area === 'sleeve' ? 0 : 40, x1 = area === 'sleeve' ? 200 : 160;
     const s = [];
     if (RING_Y[t]) {
-      for (const y of RING_Y[t]) s.push(`<rect x="0" y="${y - BAND_H / 2}" width="200" height="${BAND_H}" ${f}/>`);
+      for (const y of RING_Y[t]) s.push(`<rect x="0" y="${y - BAND_H[t] / 2}" width="200" height="${BAND_H[t]}" ${f}/>`);
     } else if (t === '帯') {
-      s.push(`<rect x="0" y="166" width="200" height="20" ${f}/>`);
+      s.push(`<rect x="0" y="160" width="200" height="24" ${f}/>`);
     } else if (/^山形/.test(t)) {
-      const ys = t === '山形帯' ? [174] : t === '山形三本輪' ? [80, 108, 136] : t === '山形二本輪' ? [94, 124] : [108];
-      for (const y of ys) s.push(`<polyline points="${zigzag(y, 0, 200, 34, 9)}" fill="none" stroke="${col}" stroke-width="12" stroke-linejoin="miter"/>`);
+      const ys = t === '山形帯' ? [170] : t === '山形三本輪' ? [76, 110, 144] : t === '山形二本輪' ? [92, 132] : [110];
+      const w = t === '山形三本輪' ? 13 : 16;
+      for (const y of ys) s.push(`<polyline points="${zigzag(y, 0, 200, 40, 12)}" fill="none" stroke="${col}" stroke-width="${w}" stroke-linejoin="miter"/>`);
     } else if (t === '菱山形') {
-      for (let x = 50; x <= 150; x += 25) s.push(`<polygon points="${x},88 ${x + 12.5},108 ${x},128 ${x - 12.5},108" ${f}/>`);
+      for (let x = 15; x <= 200; x += 34) s.push(diamond(x, 110, 34, 46, f));
     } else if (t === '襷') {
-      s.push(`<line x1="44" y1="28" x2="156" y2="200" stroke="${col}" stroke-width="20"/>`);
+      s.push(`<line x1="40" y1="24" x2="160" y2="204" stroke="${col}" stroke-width="28"/>`);
     } else if (t === '十字襷') {
-      s.push(`<line x1="44" y1="28" x2="156" y2="200" stroke="${col}" stroke-width="18"/>`);
-      s.push(`<line x1="156" y1="28" x2="44" y2="200" stroke="${col}" stroke-width="18"/>`);
+      s.push(`<line x1="40" y1="24" x2="160" y2="204" stroke="${col}" stroke-width="26"/>`);
+      s.push(`<line x1="160" y1="24" x2="40" y2="204" stroke="${col}" stroke-width="26"/>`);
     } else if (t === '縦縞') {
-      for (let x = area === 'sleeve' ? 4 : 52; x < x1; x += 16) s.push(`<rect x="${x}" y="0" width="7" height="200" ${f}/>`);
+      // 縞と地の幅を同じにする（胴に4本）
+      for (let x = 50; x < 210; x += 25) s.push(`<rect x="${x + 6}" y="0" width="13" height="200" ${f}/>`);
+      for (let x = 25; x > -25; x -= 25) s.push(`<rect x="${x + 6}" y="0" width="13" height="200" ${f}/>`);
     } else if (t === '格子') {
-      // 太い線で大きなマス目を作る（胴の幅に縦線4本、上から横線）
-      const xs = area === 'sleeve' ? [6, 30, 158, 182] : [54, 80, 106, 132];
-      for (const x of xs) s.push(`<rect x="${x}" y="0" width="12" height="200" ${f}/>`);
+      // 太い線で大きなマス目（胴に縦線4本）
+      for (let x = 54; x < 210; x += 26) s.push(`<rect x="${x}" y="0" width="12" height="200" ${f}/>`);
+      for (let x = 28; x > -20; x -= 26) s.push(`<rect x="${x}" y="0" width="12" height="200" ${f}/>`);
       for (let y = 36; y < 200; y += 38) s.push(`<rect x="0" y="${y}" width="200" height="13" ${f}/>`);
     } else if (t === '元禄') {
-      for (let y = 10, r = 0; y < 200; y += 20, r++) for (let x = (r % 2 ? 0 : 20) - 20; x < 200; x += 40) s.push(`<rect x="${x + 10}" y="${y}" width="20" height="20" ${f}/>`);
+      // 市松模様（胴に4マス）
+      const k = 25;
+      for (let r = 0, y = 22; y < 200; y += k, r++) for (let c = -2, x = 50 - 2 * k; x < 200; x += k, c++) if ((r + c) % 2 === 0) s.push(`<rect x="${x}" y="${y}" width="${k}" height="${k}" ${f}/>`);
     } else if (t === 'ダイヤモンド') {
-      // ひし形の角どうしが触れ合うように並べ、間に地色のひし形が残るようにする
-      for (let y = 20; y < 230; y += 32) for (let x = 52; x < 212; x += 24) s.push(`<polygon points="${x},${y - 16} ${x + 12},${y} ${x},${y + 16} ${x - 12},${y}" ${f}/>`);
-      for (let y = 20; y < 230; y += 32) for (let x = 52; x > -12; x -= 24) s.push(`<polygon points="${x},${y - 16} ${x + 12},${y} ${x},${y + 16} ${x - 12},${y}" ${f}/>`);
+      // ひし形の角どうしが触れ合うように並べる（胴に3つ）
+      const w = 34, h = 48;
+      for (let y = 24; y < 240; y += h) for (let x = 50 + w / 2 - 3 * w; x < 220; x += w) s.push(diamond(x, y, w, h, f));
     } else if (t === 'うろこ') {
-      for (let y = 14, r = 0; y < 220; y += 22, r++) for (let x = (r % 2 ? 13 : 0); x < 220; x += 26) s.push(`<polygon points="${x},${y} ${x + 13},${y + 22} ${x - 13},${y + 22}" ${f}/>`);
+      const w = 33, h = 29;
+      for (let r = 0, y = 22; y < 220; y += h, r++) for (let x = (r % 2 ? w / 2 : 0) + 50 - 3 * w; x < 230; x += w) s.push(`<polygon points="${x},${y} ${x + w / 2},${y + h} ${x - w / 2},${y + h}" ${f}/>`);
     } else if (['玉霰', '星散', '蛇目散', '銭形散', '井桁絣'].includes(t)) {
       const pts = area === 'sleeve'
-        ? [[28, 70], [26, 110], [24, 150], [172, 70], [174, 110], [176, 150]]
-        : t === '井桁絣' ? [[76, 72], [124, 72], [100, 112], [76, 152], [124, 152]]
-          : [[72, 60], [128, 60], [100, 88], [72, 116], [128, 116], [100, 144], [72, 172], [128, 172]];
+        ? [[30, 76], [26, 128], [170, 76], [174, 128]]
+        : t === '井桁絣' ? [[76, 70], [124, 70], [100, 112], [76, 154], [124, 154]]
+          : [[77, 64], [123, 64], [77, 110], [123, 110], [77, 156], [123, 156]];
       for (const [x, y] of pts) s.push(dot(t, x, y, col));
     }
     return s.join('');
   }
 
   function dot(t, x, y, col) {
-    if (t === '玉霰') return `<circle cx="${x}" cy="${y}" r="6" fill="${col}"/>`;
-    if (t === '蛇目散') return `<circle cx="${x}" cy="${y}" r="7" fill="none" stroke="${col}" stroke-width="4"/>`;
-    if (t === '銭形散') return `<circle cx="${x}" cy="${y}" r="8" fill="${col}"/><rect x="${x - 3}" y="${y - 3}" width="6" height="6" fill="var(--hole,#fff)" data-hole="1"/>`;
+    if (t === '玉霰') return `<circle cx="${x}" cy="${y}" r="12" fill="${col}"/>`;
+    if (t === '蛇目散') return `<circle cx="${x}" cy="${y}" r="10" fill="none" stroke="${col}" stroke-width="7"/>`;
+    if (t === '銭形散') return `<circle cx="${x}" cy="${y}" r="13" fill="${col}"/><rect x="${x - 4.5}" y="${y - 4.5}" width="9" height="9" fill="var(--hole,#fff)" data-hole="1"/>`;
     if (t === '井桁絣') {
-      return `<g fill="${col}"><rect x="${x - 7}" y="${y - 12}" width="4" height="24"/><rect x="${x + 3}" y="${y - 12}" width="4" height="24"/>`
-        + `<rect x="${x - 12}" y="${y - 7}" width="24" height="4"/><rect x="${x - 12}" y="${y + 3}" width="24" height="4"/></g>`;
+      return `<g fill="${col}"><rect x="${x - 9}" y="${y - 15}" width="6" height="30"/><rect x="${x + 3}" y="${y - 15}" width="6" height="30"/>`
+        + `<rect x="${x - 15}" y="${y - 9}" width="30" height="6"/><rect x="${x - 15}" y="${y + 3}" width="30" height="6"/></g>`;
     }
     // 星
     const p = [];
     for (let i = 0; i < 10; i++) {
-      const r = i % 2 ? 4 : 10, a = -Math.PI / 2 + (i * Math.PI) / 5;
+      const r = i % 2 ? 6 : 15, a = -Math.PI / 2 + (i * Math.PI) / 5;
       p.push(`${(x + r * Math.cos(a)).toFixed(1)},${(y + r * Math.sin(a)).toFixed(1)}`);
     }
     return `<polygon points="${p.join(' ')}" fill="${col}"/>`;
@@ -163,6 +174,7 @@
     // 袖
     out += `<path d="${SLEEVE_L}" fill="${col(silk.sleeve.c)}"/><path d="${SLEEVE_R}" fill="${col(silk.sleeve.c)}"/>`;
     if (silk.sleeve.p) out += `<g clip-path="url(#${id}s)">${holeFix(patternShapes(silk.sleeve.p.t, col(silk.sleeve.p.c), 'sleeve'), col(silk.sleeve.c))}</g>`;
+    else if (!silk.sleeve.given && silk.body.p && SLEEVE_INHERIT.has(silk.body.p.t)) out += `<g clip-path="url(#${id}s)">${patternShapes(silk.body.p.t, col(silk.body.p.c), 'sleeve')}</g>`;
     // 胴
     out += `<path d="${BODY}" fill="${col(silk.body.c)}"/>`;
     if (silk.body.p) out += `<g clip-path="url(#${id}b)">${holeFix(patternShapes(silk.body.p.t, col(silk.body.p.c), 'body'), col(silk.body.c))}</g>`;
@@ -181,9 +193,9 @@
         out += shape;
         shape = '';
       } else if (silk.span.t === '一文字') {
-        shape = `<rect x="0" y="${108 - BAND_H / 2}" width="200" height="${BAND_H}" fill="${c}"/>`;
+        shape = `<rect x="0" y="${110 - BAND_H1 / 2}" width="200" height="${BAND_H1}" fill="${c}"/>`;
       } else {
-        shape = `<polyline points="${zigzag(108, 0, 200, 34, 9)}" fill="none" stroke="${c}" stroke-width="12"/>`;
+        shape = `<polyline points="${zigzag(110, 0, 200, 40, 12)}" fill="none" stroke="${c}" stroke-width="16"/>`;
       }
       if (shape) out += `<g clip-path="url(#${id}a)">${shape}</g>`;
     }
