@@ -130,6 +130,16 @@
     return `<polygon points="${p.join(' ')}" fill="${col}"/>`;
   }
 
+  // 鋸歯形の袖部分（右袖の外側→内側、左袖の内側→外側の順に点を打つ）
+  function sleeveTeeth() {
+    const pts = ['0,0', '200,0', '200,68'];
+    for (let x = 188; x > 150; x -= 19) pts.push(`${x},68`, `${x - 9.5},90`);
+    pts.push('150,68', '50,68');
+    for (let x = 50; x > 12; x -= 19) pts.push(`${x},68`, `${x - 9.5},90`);
+    pts.push('12,68', '0,68');
+    return pts.join(' ');
+  }
+
   let uid = 0;
   // 表記から SVG 文字列を作る
   function svg(text, opts = {}) {
@@ -163,8 +173,8 @@
         for (let x = 150; x > 50; x -= 25) pts.push(`${x},70`, `${x - 12.5},98`);
         pts.push('50,70', '40,70');
         shape = `<g clip-path="url(#${id}b)"><polygon points="${pts.join(' ')}" fill="${c}"/></g>`
-          // 袖：上の部分をまっすぐ塗る
-          + `<g clip-path="url(#${id}s)"><rect x="0" y="0" width="200" height="76" fill="${c}"/></g>`;
+          // 袖：上の部分を塗り、下の縁を2つずつのギザギザにする
+          + `<g clip-path="url(#${id}s)"><polygon points="${sleeveTeeth()}" fill="${c}"/></g>`;
         out += shape;
         shape = '';
       } else if (silk.span.t === '一文字') {
