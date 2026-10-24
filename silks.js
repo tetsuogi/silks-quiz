@@ -158,20 +158,28 @@
       const c = col(silk.span.c);
       let shape = '';
       if (silk.span.t === '鋸歯形') {
-        const teeth = [];
-        for (let x = 0; x <= 200; x += 20) teeth.push(`${x},58`, `${x + 10},80`);
-        shape = `<polygon points="0,0 200,0 200,58 ${teeth.join(' ')} 0,58" fill="${c}"/>`;
+        // 胴：肩から下へ、先のとがったギザギザを4つ（右端から左端へ順に点を打つ）
+        const pts = ['40,0', '160,0', '160,70'];
+        for (let x = 150; x > 50; x -= 25) pts.push(`${x},70`, `${x - 12.5},98`);
+        pts.push('50,70', '40,70');
+        shape = `<g clip-path="url(#${id}b)"><polygon points="${pts.join(' ')}" fill="${c}"/></g>`
+          // 袖：上の部分をまっすぐ塗る
+          + `<g clip-path="url(#${id}s)"><rect x="0" y="0" width="200" height="76" fill="${c}"/></g>`;
+        out += shape;
+        shape = '';
       } else if (silk.span.t === '一文字') {
         shape = `<rect x="0" y="${108 - BAND_H / 2}" width="200" height="${BAND_H}" fill="${c}"/>`;
       } else {
         shape = `<polyline points="${zigzag(108, 0, 200, 34, 9)}" fill="none" stroke="${c}" stroke-width="12"/>`;
       }
-      out += `<g clip-path="url(#${id}a)">${shape}</g>`;
+      if (shape) out += `<g clip-path="url(#${id}a)">${shape}</g>`;
     }
+    // 襟は胴の色。鋸歯形のときは肩と同じ色になる
+    const collarColor = silk.span && silk.span.t === '鋸歯形' ? col(silk.span.c) : col(silk.body.c);
     // 輪郭・襟・ボタン
     out += `<g fill="none" stroke="${OUTLINE}" stroke-width="2.2" stroke-linejoin="round">`
       + `<path d="${SLEEVE_L}"/><path d="${SLEEVE_R}"/><path d="${BODY}"/></g>`
-      + `<path d="${COLLAR}" fill="${col(silk.body.c)}" stroke="${OUTLINE}" stroke-width="2.2" stroke-linejoin="round"/>`
+      + `<path d="${COLLAR}" fill="${collarColor}" stroke="${OUTLINE}" stroke-width="2.2" stroke-linejoin="round"/>`
       + [42, 54, 66].map(y => `<circle cx="100" cy="${y}" r="2.2" fill="none" stroke="${OUTLINE}" stroke-width="1.4"/>`).join('')
       + '</svg>';
     return out;
