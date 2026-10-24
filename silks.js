@@ -94,13 +94,16 @@
     } else if (t === '縦縞') {
       for (let x = area === 'sleeve' ? 4 : 52; x < x1; x += 16) s.push(`<rect x="${x}" y="0" width="7" height="200" ${f}/>`);
     } else if (t === '格子') {
-      for (let x = 46; x < 200; x += 20) s.push(`<rect x="${x}" y="0" width="5" height="200" ${f}/>`);
-      for (let x = 46; x > 0; x -= 20) s.push(`<rect x="${x}" y="0" width="5" height="200" ${f}/>`);
-      for (let y = 30; y < 200; y += 20) s.push(`<rect x="0" y="${y}" width="200" height="5" ${f}/>`);
+      // 太い線で大きなマス目を作る（胴の幅に縦線4本、上から横線）
+      const xs = area === 'sleeve' ? [6, 30, 158, 182] : [54, 80, 106, 132];
+      for (const x of xs) s.push(`<rect x="${x}" y="0" width="12" height="200" ${f}/>`);
+      for (let y = 36; y < 200; y += 38) s.push(`<rect x="0" y="${y}" width="200" height="13" ${f}/>`);
     } else if (t === '元禄') {
       for (let y = 10, r = 0; y < 200; y += 20, r++) for (let x = (r % 2 ? 0 : 20) - 20; x < 200; x += 40) s.push(`<rect x="${x + 10}" y="${y}" width="20" height="20" ${f}/>`);
     } else if (t === 'ダイヤモンド') {
-      for (let y = 10, r = 0; y < 220; y += 20, r++) for (let x = (r % 2 ? 12 : 0); x < 212; x += 24) s.push(`<polygon points="${x},${y - 20} ${x + 12},${y} ${x},${y + 20} ${x - 12},${y}" ${f}/>`);
+      // ひし形の角どうしが触れ合うように並べ、間に地色のひし形が残るようにする
+      for (let y = 20; y < 230; y += 32) for (let x = 52; x < 212; x += 24) s.push(`<polygon points="${x},${y - 16} ${x + 12},${y} ${x},${y + 16} ${x - 12},${y}" ${f}/>`);
+      for (let y = 20; y < 230; y += 32) for (let x = 52; x > -12; x -= 24) s.push(`<polygon points="${x},${y - 16} ${x + 12},${y} ${x},${y + 16} ${x - 12},${y}" ${f}/>`);
     } else if (t === 'うろこ') {
       for (let y = 14, r = 0; y < 220; y += 22, r++) for (let x = (r % 2 ? 13 : 0); x < 220; x += 26) s.push(`<polygon points="${x},${y} ${x + 13},${y + 22} ${x - 13},${y + 22}" ${f}/>`);
     } else if (['玉霰', '星散', '蛇目散', '銭形散', '井桁絣'].includes(t)) {
