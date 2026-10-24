@@ -332,6 +332,7 @@ const TYPES = {
   'notation-silk': '表記 → 服',
   'crown-owner': '冠名 → 馬主',
   'horse-silk': 'GI馬 → 服',
+  'build': '勝負服を作る',
 };
 const DEFAULT_TYPES = ['silk-owner', 'owner-silk', 'horse-silk'];
 
@@ -377,6 +378,11 @@ function makeQuestion(key, pool) {
       choices: ownersAsChoices([o, ...opts]), check: v => nameMatches(o.name, v), inputHint: '馬主名を入力', hintText: o.name,
     });
   }
+  if (type === 'build') {
+    return Object.assign(q, {
+      prompt: `${o.name}の勝負服を作ってください`, sub: `${KINDS[o.kind]}${o.crown ? `・冠名「${o.crown}」` : ''}`, kind: 'build', choiceOnly: true,
+    });
+  }
   if (type === 'horse-silk') {
     const w = o.wins[+extra];
     if (!w) return null;
@@ -405,7 +411,7 @@ function initialOf(name) {
 }
 
 function startSession(keys, { mode = settings.mode, title = 'クイズ', review = false, pool = null } = {}) {
-  const qs = keys.map(k => makeQuestion(k, pool)).filter(Boolean).map(q => Object.assign(q, { choices: shuffle(q.choices) }));
+  const qs = keys.map(k => makeQuestion(k, pool)).filter(Boolean).map(q => Object.assign(q, { choices: q.choices ? shuffle(q.choices) : [] }));
   session = { qs, i: 0, mode, title, review, hint: settings.hint, results: [], answered: null };
 }
 
@@ -493,6 +499,111 @@ function renderQuizSettings() {
   syncStart();
 }
 
+// ============================================================
+// クイズ：勝負服を作る（エディタ）
+// ============================================================
+const BODY_PATTERNS = ['一本輪', '二本輪', '三本輪', '帯', '山形一本輪', '山形二本輪', '山形三本輪', '山形帯', '菱山形', '襷', '十字襷',
+  '縦縞', '格子', '元禄', 'ダイヤモンド', 'うろこ', '玉霰', '星散', '蛇目散', '銭形散', '井桁絣'];
+const SLEEVE_PATTERNS = ['一本輪', '二本輪', '三本輪', '山形一本輪', '山形二本輪', '山形三本輪', '縦縞', '格子', '元禄', 'ダイヤモンド', 'うろこ', '玉霰', '星散', '蛇目散', '銭形散'];
+const SPANS = ['鋸歯形', '一文字', '山形一文字'];
+
+const newBuild = () => ({ bodyC: '白', bodyP: null, bodyPC: '黒', sleeveMode: 'same', sleeveC: '白', sleeveP: null, sleevePC: '黒', span: null, spanC: '黒' });
+
+// エディタの状態 → 描画用の構造
+function buildToSilk(b) {
+  const sleeveGiven = b.sleeveMode === 'color' || !!b.sleeveP;
+  return {
+    body: { c: b.bodyC, p: b.bodyP ? { t: b.bodyP, c: b.bodyPC } : null },
+    sleeve: { c: b.sleeveMode === 'color' ? b.sleeveC : b.bodyC, p: b.sleeveP ? { t: b.sleeveP, c: b.sleevePC } : null, given: sleeveGiven },
+    span: b.span ? { t: b.span, c: b.spanC } : null,
+  };
+}
+// 構造 → 表記（例：黒、赤十字襷、袖黄縦縞）
+function silkToNotation(k) {
+  const t = [k.body.c];
+  if (k.body.p) t.push(k.body.p.c + k.body.p.t);
+  const sleeveColorWritten = k.sleeve.given && k.sleeve.c !== k.body.c;
+  if (sleeveColorWritten) t.push(`${k.sleeve.c}袖${k.sleeve.p ? k.sleeve.p.c + k.sleeve.p.t : ''}`);
+  else if (k.sleeve.p) t.push(`袖${k.sleeve.p.c}${k.sleeve.p.t}`);
+  else if (k.sleeve.given && k.body.p && Silks.SLEEVE_INHERIT.has(k.body.p.t)) t.push(`${k.sleeve.c}袖`);
+  if (k.span) t.push(k.span.c + k.span.t);
+  return t.join('、');
+}
+// 見た目で比べるための各部品（袖に続く柄も考える）
+function effectiveParts(k) {
+  const pat = p => (p ? `${p.c}${p.t}` : '無地');
+  const sleeveP = k.sleeve.p || (!k.sleeve.given && k.body.p && Silks.SLEEVE_INHERIT.has(k.body.p.t) ? k.body.p : null);
+  return [
+    { label: '胴の色', v: k.body.c },
+    { label: '胴の柄', v: pat(k.body.p) },
+    { label: '袖の色', v: k.sleeve.c },
+    { label: '袖の柄', v: pat(sleeveP) },
+    { label: '肩から垂れる柄', v: k.span ? `${k.span.c}${k.span.t}` : 'なし' },
+  ];
+}
+
+const colorChips = (field, cur) => `<div class="chips-color">${COLOR_ORDER.map(c => `<button class="chip-color" data-b="${field}" data-v="${c}" aria-pressed="${cur === c}" aria-label="${c}"><span style="background:${Silks.COLORS[c]}"></span>${c}</button>`).join('')}</div>`;
+const iconSilk = k => Silks.svg(k, { size: 44, label: '' });
+function patternChips(field, list, cur, makeSilk) {
+  return `<div class="chips-pattern">${[null, ...list].map(t => `<button class="chip-pattern" data-b="${field}" data-v="${t || ''}" aria-pressed="${(cur || null) === t}">${iconSilk(makeSilk(t))}<span>${t || (field === 'span' ? 'なし' : '無地')}</span></button>`).join('')}</div>`;
+}
+
+function renderBuilder(q) {
+  const b = session.build;
+  const k = buildToSilk(b);
+  const bodyIcon = t => ({ body: { c: '白', p: t ? { t, c: '黒' } : null }, sleeve: { c: '白', p: null, given: true }, span: null });
+  const sleeveIcon = t => ({ body: { c: '白', p: null }, sleeve: { c: '白', p: t ? { t, c: '黒' } : null, given: true }, span: null });
+  const spanIcon = t => ({ body: { c: '白', p: null }, sleeve: { c: '白', p: null, given: true }, span: t ? { t, c: '黒' } : null });
+  return `
+    <div class="builder-preview">${Silks.svg(k, { size: 132, label: '作成中の勝負服' })}<div><p class="kicker">いまの表記</p><p class="b-nota">${esc(silkToNotation(k))}</p></div></div>
+    <section class="builder">
+      <h2 class="b-head">胴</h2>
+      <p class="b-label">地の色</p>${colorChips('bodyC', b.bodyC)}
+      <p class="b-label">柄</p>${patternChips('bodyP', BODY_PATTERNS, b.bodyP, bodyIcon)}
+      ${b.bodyP ? `<p class="b-label">柄の色</p>${colorChips('bodyPC', b.bodyPC)}` : ''}
+      <h2 class="b-head">袖</h2>
+      <div class="seg" role="group" aria-label="袖の地">
+        <button data-b="sleeveMode" data-v="same" aria-pressed="${b.sleeveMode === 'same'}">胴と同じ</button>
+        <button data-b="sleeveMode" data-v="color" aria-pressed="${b.sleeveMode === 'color'}">色を変える</button>
+      </div>
+      <p class="note">「胴と同じ」で袖の柄を選ばないと、輪・縦縞・格子などの胴の柄が袖にも続きます。</p>
+      ${b.sleeveMode === 'color' ? `<p class="b-label">袖の色</p>${colorChips('sleeveC', b.sleeveC)}` : ''}
+      <p class="b-label">袖の柄</p>${patternChips('sleeveP', SLEEVE_PATTERNS, b.sleeveP, sleeveIcon)}
+      ${b.sleeveP ? `<p class="b-label">袖の柄の色</p>${colorChips('sleevePC', b.sleevePC)}` : ''}
+      <h2 class="b-head">肩から垂れる柄</h2>
+      ${patternChips('span', SPANS, b.span, spanIcon)}
+      ${b.span ? `<p class="b-label">色</p>${colorChips('spanC', b.spanC)}` : ''}
+      <div class="row between b-actions">
+        <button class="btn ghost small" id="b-reset">最初から</button>
+        <button class="btn primary" id="b-done">できた！</button>
+      </div>
+    </section>`;
+}
+
+function renderBuildResult(q, ans) {
+  const mine = ans.parts, right = effectiveParts(q.o.parsed);
+  return `<div class="build-compare">
+      <figure>${Silks.svg(ans.built, { size: 120, label: 'あなたの勝負服' })}<figcaption>あなた</figcaption></figure>
+      <figure>${silkImg(q.o, 120)}<figcaption>正解</figcaption></figure>
+    </div>
+    <table class="part-table"><tbody>${right.map((r, i) => `<tr class="${mine[i].v === r.v ? 'ok' : 'ng'}"><th>${r.label}</th><td>${mine[i].v === r.v ? '◎' : '×'}</td><td>${esc(mine[i].v)}${mine[i].v === r.v ? '' : ` → <b>${esc(r.v)}</b>`}</td></tr>`).join('')}</tbody></table>
+    <p class="note">正解の表記：${esc(q.o.silk)}</p>`;
+}
+
+function submitBuild() {
+  const s = session;
+  if (s.answered) return;
+  const q = s.qs[s.i];
+  const built = buildToSilk(s.build);
+  const parts = effectiveParts(built);
+  const right = effectiveParts(q.o.parsed);
+  const ok = parts.every((p, i) => p.v === right[i].v);
+  s.answered = { input: silkToNotation(built), ok, built, parts };
+  recordResult(q, ok);
+  renderQuestion();
+  window.scrollTo({ top: 0 });
+}
+
 function renderQuestion() {
   const s = session;
   const q = s.qs[s.i];
@@ -505,7 +616,10 @@ function renderQuestion() {
   }).join('');
 
   let body;
-  if (inputMode) {
+  if (q.kind === 'build') {
+    if (!s.build) s.build = newBuild();
+    body = ans ? '' : renderBuilder(q);
+  } else if (inputMode) {
     body = `<form class="answer-form" id="ans-form" autocomplete="off">
         <input type="text" id="ans" placeholder="答えを入力" value="${ans ? esc(ans.input) : ''}" ${ans ? 'disabled' : ''} aria-label="答え">
         ${ans ? `<button class="btn primary" type="button" id="next">${nextLabel}</button>` : '<button class="btn primary" type="submit">答える</button>'}
@@ -528,12 +642,13 @@ function renderQuestion() {
   let fb = '';
   if (ans) {
     fb = `<div class="verdict ${ans.ok ? 'ok' : 'ng'}">
-        <div><p class="v-title">${ans.ok ? '◎ 的中' : '× ハズレ'}</p>${!ans.ok ? `<p class="v-sub">正解：${esc(q.o.name)}${inputMode && ans.input ? `（あなたの答え：${esc(ans.input)}）` : ''}</p>` : ''}</div>
+        <div><p class="v-title">${ans.ok ? '◎ 的中' : '× ハズレ'}</p>${!ans.ok && q.kind !== 'build' ? `<p class="v-sub">正解：${esc(q.o.name)}${inputMode && ans.input ? `（あなたの答え：${esc(ans.input)}）` : ''}</p>` : ''}</div>
         <div class="v-actions">
           ${ans.ok ? `<button class="known-btn" id="known" aria-pressed="${!!state.known[q.key]}">もう覚えた</button>` : ''}
           ${inputMode ? '' : `<button class="btn primary" id="next">${nextLabel}</button>`}
         </div>
       </div>
+      ${q.kind === 'build' ? renderBuildResult(q, ans) : ''}
       <div class="feedback">
         <div class="fb-head">${silkImg(q.o, 88)}<div><p class="kicker">${KINDS[q.o.kind]}</p><h3>${esc(q.o.name)}</h3></div></div>
         ${infoHtml(q.o, { wins: 3 })}
@@ -560,6 +675,19 @@ function renderQuestion() {
     <div class="row end"><button class="btn ghost small" id="quit">やめる</button></div>`;
 
   app.querySelectorAll('[data-c]').forEach(b => b.addEventListener('click', () => answer(b.dataset.c)));
+  app.querySelectorAll('[data-b]').forEach(b => b.addEventListener('click', () => {
+    const f = b.dataset.b, v = b.dataset.v || null;
+    s.build[f] = v;
+    // 柄を選んだとき、柄の色が地の色と同じなら見えないので別の色にしておく
+    const fix = (pf, base) => { if (s.build[pf] === s.build[base]) s.build[pf] = s.build[base] === '黒' ? '白' : '黒'; };
+    fix('bodyPC', 'bodyC');
+    fix('sleevePC', s.build.sleeveMode === 'color' ? 'sleeveC' : 'bodyC');
+    const y = window.scrollY;
+    renderQuestion();
+    window.scrollTo({ top: y });
+  }));
+  document.getElementById('b-reset')?.addEventListener('click', () => { s.build = newBuild(); renderQuestion(); });
+  document.getElementById('b-done')?.addEventListener('click', submitBuild);
   const form = document.getElementById('ans-form');
   if (form) {
     form.addEventListener('submit', e => {
@@ -579,7 +707,7 @@ function renderQuestion() {
     save();
   });
   document.getElementById('quit').addEventListener('click', () => { session = null; renderQuiz(); });
-  if (ans) document.getElementById('next').focus({ preventScroll: true });
+  if (ans && document.getElementById('next')) document.getElementById('next').focus({ preventScroll: true });
 }
 
 function answer(input) {
@@ -589,6 +717,12 @@ function answer(input) {
   const inputMode = s.mode === 'input' && !q.choiceOnly;
   const ok = inputMode ? q.check(input) : input === q.answer;
   s.answered = { input, ok };
+  recordResult(q, ok);
+  renderQuestion();
+}
+
+function recordResult(q, ok) {
+  const s = session;
   s.results[s.i] = { key: q.key, ok };
   state.total++;
   if (ok) {
@@ -601,12 +735,12 @@ function answer(input) {
   }
   save();
   updateBadge();
-  renderQuestion();
 }
 
 function nextQuestion() {
   session.i++;
   session.answered = null;
+  session.build = null;
   renderQuiz();
   window.scrollTo({ top: 0 });
 }
@@ -734,7 +868,7 @@ document.addEventListener('keydown', e => {
   }
   if (view === 'quiz' && session && session.i < session.qs.length && !typing && !session.answered && /^[1-4]$/.test(e.key)) {
     const q = session.qs[session.i];
-    if (session.mode === 'input' && !q.choiceOnly) return;
+    if ((session.mode === 'input' && !q.choiceOnly) || q.kind === 'build') return;
     const c = q.choices[+e.key - 1];
     if (c) answer(c.value);
   }

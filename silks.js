@@ -210,7 +210,7 @@
     return out;
   }
 
-  const api = { parse, svg, COLORS };
+  const api = { parse, svg, COLORS, SLEEVE_INHERIT };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.Silks = api;
 })(typeof window !== 'undefined' ? window : globalThis);
